@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/kanef1/event-reminder-bot/pkg/model"
 	"log"
 	"os"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/kanef1/event-reminder-bot/model"
 )
 
 var (
@@ -48,9 +47,8 @@ func SaveEvents(events []model.Event) error {
 		return fmt.Errorf("ошибка сериализации: %v", err)
 	}
 
-    return os.WriteFile("events.json", data, 0644)
+	return os.WriteFile("events.json", data, 0644)
 }
-
 
 func CleanupPastEvents() error {
 	events, err := LoadEvents()
@@ -72,9 +70,9 @@ func CleanupPastEvents() error {
 }
 
 func ReindexEvents(events []model.Event) []model.Event {
-    if len(events) == 0 {
-        return events
-    }
+	if len(events) == 0 {
+		return events
+	}
 
 	sort.Slice(events, func(i, j int) bool {
 		return events[i].DateTime.Before(events[j].DateTime)
