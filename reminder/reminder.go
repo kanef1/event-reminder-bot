@@ -1,60 +1,67 @@
 package reminder
 
 import (
-    "context"
-    "log"
-    "time"
+	"context"
+	"log"
+	"time"
 
-    "github.com/go-telegram/bot"
-    "github.com/kanef1/event-reminder-bot/model"
-    "github.com/kanef1/event-reminder-bot/storage"
+	"github.com/go-telegram/bot"
+	"github.com/kanef1/event-reminder-bot/db"
+	"github.com/kanef1/event-reminder-bot/model"
 )
 
-func ScheduleReminder(ctx context.Context, b *bot.Bot, chatID int64, e model.Event) context.CancelFunc {
-    duration := time.Until(e.DateTime)
-    if duration <= 0 {
-        return nil
-    }
+var (
+	activeReminders = make(map[int]context.CancelFunc)
+)
 
-    ctx, cancel := context.WithCancel(ctx)
-    storage.RegisterReminder(e.OriginalID, cancel)
+func ScheduleReminder(ctx context.Context, b *bot.Bot, database *db.DB, chatID int64, event model.Event) context.CancelFunc {
+	duration := time.Until(event.SendAt)
+	if duration <= 0 {
+		return nil
+	}
 
-    go func() {
-        defer cancel()
-        
-        select {
-        case <-time.After(duration):
-            events, err := storage.LoadEvents()
-            if err != nil {
-                log.Printf("Ошибка загрузки событий: %v", err)
-                return
-            }
+	ctx, cancel := context.WithCancel(ctx)
+	RegisterReminder(event.ID, cancel)
 
-            exists := false
-            for _, event := range events {
-                if event.OriginalID == e.OriginalID {
-                    exists = true
-                    break
-                }
-            }
+	go func() {
+		defer cancel()
 
-            if exists {
-                b.SendMessage(ctx, &bot.SendMessageParams{
-                    ChatID: chatID,
-                    Text:   "🔔 Напоминание: " + e.Text,
-                })
-                log.Printf("Отправлено напоминание: OriginalID=%d", e.OriginalID)
-            } else {
-                log.Printf("Событие OriginalID=%d было удалено", e.OriginalID)
-            }
+		select {
+		case <-time.After(duration):
+			// Проверяем, существует ли событие в БД
+			dbEvent, err := database.GetEvent(ctx, event.ID)
+			if err != nil {
+				log.Printf("Ошибка проверки события: %v", err)
+				return
+			}
 
-        case <-ctx.Done():
-            log.Printf("Напоминание OriginalID=%d отменено", e.OriginalID)
-            return
-        }
-    }()
+			if dbEvent != nil {
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: chatID,
+					Text:   "🔔 Напоминание: " + event.Message,
+				})
+				log.Printf("Отправлено напоминание: ID=%d", event.ID)
+			} else {
+				log.Printf("Событие ID=%d было удалено", event.ID)
+			}
 
-    return cancel
+		case <-ctx.Done():
+			log.Printf("Напоминание ID=%d отменено", event.ID)
+			return
+		}
+	}()
+
+	return cancel
 }
 
+func RegisterReminder(eventId int, cancel context.CancelFunc) {
+	activeReminders[eventId] = cancel
+}
 
+func CancelReminder(eventId int) {
+	if cancel, exists := activeReminders[eventId]; exists {
+		cancel()
+		delete(activeReminders, eventId)
+		log.Printf("Напоминание ID=%d отменено", eventId)
+	}
+}
