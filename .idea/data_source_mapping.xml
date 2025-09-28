@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project version="4">
-  <component name="DataSourcePerFileMappings">
-    <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/da1add1d-3a62-4cbc-9c69-9e90832b0b1a/console.sql" value="da1add1d-3a62-4cbc-9c69-9e90832b0b1a" />
-    <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/da1add1d-3a62-4cbc-9c69-9e90832b0b1a/console_1.sql" value="da1add1d-3a62-4cbc-9c69-9e90832b0b1a" />
-    <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/da1add1d-3a62-4cbc-9c69-9e90832b0b1a/console_2.sql" value="da1add1d-3a62-4cbc-9c69-9e90832b0b1a" />
-    <file url="file://$PROJECT_DIR$/docs/botsrv.sql" value="da1add1d-3a62-4cbc-9c69-9e90832b0b1a" />
-  </component>
-</project>
