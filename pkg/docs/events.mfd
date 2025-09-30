@@ -1,0 +1,12 @@
+<Project xmlns:xsi="" xmlns:xsd="">
+    <Name>events.mfd</Name>
+    <PackageNames>
+        <string>events</string>
+    </PackageNames>
+    <Languages>
+        <string>en</string>
+    </Languages>
+    <GoPGVer>10</GoPGVer>
+    <CustomTypes></CustomTypes>
+    <TableMapping></TableMapping>
+</Project>
