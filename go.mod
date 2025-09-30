@@ -6,6 +6,7 @@ require github.com/go-telegram/bot v1.16.0
 
 require (
 	github.com/go-pg/pg/v10 v10.15.0
+	github.com/go-pg/urlstruct v1.0.1
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.0
 )
@@ -13,6 +14,7 @@ require (
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/codemodus/kace v0.5.1 // indirect
 	github.com/go-pg/zerochecker v0.2.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect

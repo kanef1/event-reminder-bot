@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/kanef1/event-reminder-bot/pkg/db"
 	"github.com/kanef1/event-reminder-bot/pkg/model"
-	"github.com/kanef1/event-reminder-bot/pkg/storage"
 )
 
 func DefaultHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -48,7 +48,7 @@ func HelpHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	})
 }
 
-func DeleteHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+func DeleteHandler(ctx context.Context, b *bot.Bot, update *models.Update, bm *BotManager) {
 	args := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/delete"))
 	if args == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{
@@ -67,43 +67,9 @@ func DeleteHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		return
 	}
 
-	events, err := storage.LoadEvents()
+	err = bm.DeleteEventByID(ctx, id)
 	if err != nil {
-		log.Printf("Ошибка загрузки событий: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при загрузке событий",
-		})
-		return
-	}
-
-	for _, e := range events {
-		if e.ID == id {
-			storage.CancelReminder(e.OriginalID)
-			break
-		}
-	}
-
-	newEvents := make([]model.Event, 0)
-	deleted := false
-	for _, e := range events {
-		if e.ID != id {
-			newEvents = append(newEvents, e)
-		} else {
-			deleted = true
-		}
-	}
-
-	if !deleted {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "🔍 Событие с таким ID не найдено",
-		})
-		return
-	}
-
-	if err := storage.SaveEvents(storage.ReindexEvents(newEvents)); err != nil {
-		log.Printf("Ошибка сохранения событий: %v", err)
+		log.Printf("Ошибка удаления события: %v", err)
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
 			Text:   "❌ Ошибка при удалении события",
@@ -117,8 +83,8 @@ func DeleteHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	})
 }
 
-func ListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	events, err := storage.LoadEvents()
+func ListHandler(ctx context.Context, b *bot.Bot, update *models.Update, bm *BotManager) {
+	events, err := bm.GetUserEvents(ctx, update.Message.Chat.ID)
 	if err != nil {
 		log.Printf("Ошибка загрузки событий: %v", err)
 		b.SendMessage(ctx, &bot.SendMessageParams{
@@ -127,9 +93,6 @@ func ListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		})
 		return
 	}
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].DateTime.Before(events[j].DateTime)
-	})
 
 	if len(events) == 0 {
 		b.SendMessage(ctx, &bot.SendMessageParams{
@@ -143,10 +106,11 @@ func ListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	msg.WriteString("📅 Список событий (от ближайших):\n\n")
 	for i, e := range events {
 		msg.WriteString(fmt.Sprintf(
-			"%d. %s — %s\n",
+			"%d. %s — %s (ID: %d)\n",
 			i+1,
 			e.Text,
 			e.DateTime.Format("2006-01-02 15:04"),
+			e.ID,
 		))
 	}
 
@@ -157,11 +121,12 @@ func ListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 }
 
 type BotManager struct {
-	b *bot.Bot
+	b          *bot.Bot
+	eventsRepo db.EventsRepo
 }
 
-func NewBotManager(b *bot.Bot) *BotManager {
-	return &BotManager{b: b}
+func NewBotManager(b *bot.Bot, eventsRepo db.EventsRepo) *BotManager {
+	return &BotManager{b: b, eventsRepo: eventsRepo}
 }
 
 func (bm BotManager) SendReminder(ctx context.Context, chatID int64, text string) {
@@ -172,7 +137,6 @@ func (bm BotManager) SendReminder(ctx context.Context, chatID int64, text string
 }
 
 func (bm BotManager) AddEvent(ctx context.Context, chatId int64, parts []string) (*model.Event, error) {
-
 	datePart := parts[0]
 	timePart := parts[1]
 	text := parts[2]
@@ -192,26 +156,91 @@ func (bm BotManager) AddEvent(ctx context.Context, chatId int64, parts []string)
 		return nil, fmt.Errorf("past_date")
 	}
 
-	events, err := storage.LoadEvents()
+	event := &db.Event{
+		UserTgID: chatId,
+		Message:  text,
+		SendAt:   dt,
+	}
+
+	addedEvent, err := bm.eventsRepo.AddEvent(ctx, event)
+	if err != nil {
+		log.Printf("Ошибка сохранения события: %v", err)
+		return nil, err
+	}
+
+	return &model.Event{
+		ID:         addedEvent.ID,
+		OriginalID: addedEvent.ID,
+		ChatID:     addedEvent.UserTgID,
+		Text:       addedEvent.Message,
+		DateTime:   addedEvent.SendAt,
+	}, nil
+}
+
+func (bm BotManager) DeleteEventByID(ctx context.Context, id int) error {
+	// Получаем событие из базы данных
+	event, err := bm.eventsRepo.EventByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if event == nil {
+		return fmt.Errorf("event not found")
+	}
+
+	// Удаляем событие из базы данных
+	deleted, err := bm.eventsRepo.DeleteEvent(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if !deleted {
+		return fmt.Errorf("event not found")
+	}
+
+	return nil
+}
+
+func (bm BotManager) GetUserEvents(ctx context.Context, chatID int64) ([]model.Event, error) {
+	search := &db.EventSearch{UserTgID: &chatID}
+	dbEvents, err := bm.eventsRepo.EventsByFilters(ctx, search, db.PagerNoLimit)
 	if err != nil {
 		return nil, err
 	}
 
-	event := model.Event{
-		OriginalID: int(time.Now().UnixNano()),
-		ChatID:     chatId,
-		Text:       text,
-		DateTime:   dt,
+	sort.Slice(dbEvents, func(i, j int) bool {
+		return dbEvents[i].SendAt.Before(dbEvents[j].SendAt)
+	})
+
+	events := make([]model.Event, len(dbEvents))
+	for i, dbEvent := range dbEvents {
+		events[i] = model.Event{
+			ID:         dbEvent.ID,
+			OriginalID: dbEvent.ID,
+			ChatID:     dbEvent.UserTgID,
+			Text:       dbEvent.Message,
+			DateTime:   dbEvent.SendAt,
+		}
 	}
 
-	events = append(events, event)
+	return events, nil
+}
 
-	events = storage.ReindexEvents(events)
-
-	if err := storage.SaveEvents(events); err != nil {
-		log.Printf("Ошибка сохранения событий: %v", err)
+func (bm BotManager) GetEventByID(ctx context.Context, id int) (*model.Event, error) {
+	dbEvent, err := bm.eventsRepo.EventByID(ctx, id)
+	if err != nil {
 		return nil, err
 	}
 
-	return &event, nil
+	if dbEvent == nil {
+		return nil, nil
+	}
+
+	return &model.Event{
+		ID:         dbEvent.ID,
+		OriginalID: dbEvent.ID,
+		ChatID:     dbEvent.UserTgID,
+		Text:       dbEvent.Message,
+		DateTime:   dbEvent.SendAt,
+	}, nil
 }

@@ -23,10 +23,18 @@ func NewBotService(b *bot.Bot, bm *botManager.BotManager, rm *reminder.ReminderM
 
 func (bs *BotService) RegisterHandlers() {
 	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, botManager.StartHandler)
-	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/add", bot.MatchTypePrefix, bs.AddHandler)
-	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/list", bot.MatchTypeExact, botManager.ListHandler)
 	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, botManager.HelpHandler)
-	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/delete", bot.MatchTypePrefix, botManager.DeleteHandler)
+	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/add", bot.MatchTypePrefix, bs.AddHandler)
+	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/list", bot.MatchTypeExact, bs.listHandler)
+	bs.b.RegisterHandler(bot.HandlerTypeMessageText, "/delete", bot.MatchTypePrefix, bs.deleteHandler)
+}
+
+func (bs *BotService) deleteHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	botManager.DeleteHandler(ctx, b, update, bs.bm)
+}
+
+func (bs *BotService) listHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	botManager.ListHandler(ctx, b, update, bs.bm)
 }
 
 func (bs BotService) AddHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -59,7 +67,15 @@ func (bs BotService) AddHandler(ctx context.Context, b *bot.Bot, update *models.
 		return
 	}
 
-	bs.rm.ScheduleReminder(ctx, *event)
+	reminderEvent := reminder.Event{
+		ID:         event.ID,
+		OriginalID: event.OriginalID,
+		ChatID:     event.ChatID,
+		Text:       event.Text,
+		DateTime:   event.DateTime,
+	}
+
+	bs.rm.ScheduleReminder(ctx, reminderEvent)
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
